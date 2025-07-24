@@ -1,0 +1,168 @@
+---
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: openhands-issue-resolver-pipeline
+spec:
+  description: Simple OpenHands pipeline that processes specified repositories
+  params:
+    # Standard pipeline parameters
+    - name: repo-url
+      type: string
+      description: Repository URL to process
+      default: "https://github.com/RHRolun/test-openhands"
+    - name: llm-model
+      type: string
+      description: LLM model to use
+      default: "openai/qwen/qwen3-235b-a22b-07-25:free"
+    - name: llm-base-url
+      type: string
+      description: Base URL for the LLM API
+      default: "https://openrouter.ai/api/v1"
+    - name: max-iterations
+      type: string
+      description: Maximum iterations for OpenHands
+      default: "10"
+    # Event context parameters
+    - name: event-type
+      type: string
+      description: GitHub event type
+      default: "issue"
+    - name: repo-full-name
+      type: string
+      description: Repository full name (org/repo)
+      default: "RHRolun/test-openhands"
+    - name: username
+      type: string
+      description: Git username that owns the PAT
+    # Issue context parameters
+    - name: issue-number
+      type: string
+      description: Issue number
+      default: ""
+    - name: namespace
+      type: string
+      description: Namespace to run OpenHands 
+  workspaces:
+    - name: workspace
+      description: Shared workspace for processing
+  tasks:
+    - name: clone-repository
+      taskRef:
+        resolver: cluster
+        params:
+          - name: kind
+            value: task
+          - name: name
+            value: git-clone
+          - name: namespace
+            value: openshift-pipelines 
+      workspaces:
+        - name: output
+          workspace: workspace
+      params:
+        - name: URL
+          value: "$(params.repo-url)"
+        - name: REVISION
+          value: "main"
+        - name: DELETE_EXISTING
+          value: "true"
+        - name: SSL_VERIFY
+          value: "false"
+    - name: openhands-issue-resolver
+      taskRef:
+        name: openhands-issue-resolver
+      params:
+        - name: repo-url
+          value: $(params.repo-url)
+        - name: llm-model
+          value: $(params.llm-model)
+        - name: max-iterations
+          value: $(params.max-iterations)
+        - name: llm-base-url
+          value: $(params.llm-base-url)
+        - name: event-type
+          value: $(params.event-type)
+        - name: repo-full-name
+          value: $(params.repo-full-name)
+        - name: username
+          value: $(params.username)
+        - name: issue-number
+          value: $(params.issue-number)
+        - name: namespace
+          value: openhands-pipeline
+      runAfter:
+        - clone-repository
+---
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: openhands-issue-resolver
+spec:
+  description: Process a single repository with OpenHands
+  params:
+    # Standard pipeline parameters
+    - name: repo-url
+      type: string
+      description: Repository URL
+    - name: llm-model
+      type: string
+      description: LLM model to use
+    - name: max-iterations
+      type: string
+      description: Maximum iterations
+    - name: llm-base-url
+      type: string
+      description: Base URL for the LLM API
+      default: "https://api.openai.com/v1"
+    - name: event-type
+      type: string
+      description: GitHub event type
+    - name: repo-full-name
+      type: string
+      description: Repository full name (org/repo)
+    - name: username
+      type: string
+      description: Git username that owns the PAT
+    - name: issue-number
+      type: string
+      description: Issue number
+    - name: namespace
+      type: string
+      description: Namespace for the pipeline
+  steps:
+    - name: setup-and-process
+      image: quay.io/rlundber/openhands-main:0.2
+      env:
+        # OpenHands Configuration
+        - name: LLM_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: openhands-secrets
+              key: llm-api-key
+        - name: PAT_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: openhands-secrets
+              key: pat-token
+
+      script: |
+        #!/bin/bash
+        set -e
+
+        export LLM_BASE_URL=$(params.llm-base-url)
+        export LLM_MODEL=$(params.llm-model)
+        export KUBERNETES_NAMESPACE=$(params.namespace)
+        
+        echo "🚀 Starting OpenHands processing..."
+        echo "Repository: $(params.repo-url)"
+        echo "LLM Model: $(params.llm-model)"
+        echo "Max Iterations: $(params.max-iterations)"
+        echo "Event Type: $(params.event-type)"
+        
+        sed -i 's/docker/kubernetes/g' /app/openhands/resolver/issue_resolver.py
+
+        sed -i 's/session_id = sid or generate_sid(config)/session_id = "simple"/' /app/openhands/core/setup.py
+
+        python -m openhands.resolver.resolve_issue --selected-repo $(params.repo-full-name) --issue-number $(params.issue-number) --issue-type $(params.event-type) --username $(params.username) --token $PAT_TOKEN --max-iterations $(params.max-iterations)
+        python -m openhands.resolver.send_pull_request --selected-repo $(params.repo-full-name) --issue-number $(params.issue-number) --username $(params.username) --token $PAT_TOKEN --pr-type draft
