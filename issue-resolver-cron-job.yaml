@@ -1,0 +1,52 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: start-issue-resolver-pipelines
+spec:
+  template:
+    spec:
+      serviceAccountName: pipeline-trigger-sa
+      containers:
+      - name: trigger-pipelines
+        image: registry.redhat.io/ubi8/toolbox@sha256:ce43afc4a16efbf1308b099e9ea5d1ade2a1b03db387a712c7cc1afdef73359f
+        command:
+          - /bin/sh
+          - -c
+        args:
+          - |
+            curl -sL https://mirror.openshift.com/pub/openshift-v4/clients/pipeline/latest/tkn-linux-amd64.tar.gz | tar --no-same-owner -xzf - -C /tmp tkn 
+            chmod -R 755 /tmp/tkn
+
+            set -euo pipefail
+
+            echo "going into while loop"
+
+            while IFS= read -r repo || [ -n "$repo" ]; do
+              echo "Repository: $repo"
+            
+              # Extract repo full name from URL (e.g., owner/repo from https://github.com/owner/repo.git)
+              repo_full_name=$(echo "${repo}" | sed 's|.*github\.com/||' | sed 's|\.git$||')
+              
+              echo "Triggering pipeline for repo: ${repo} (${repo_full_name})"
+              /tmp/tkn pipeline start openhands-issue-resolver-pipeline \
+                --workspace name=workspace,claimName=openhands-runtime-simple-pvc \
+                --param repo-url="${repo}" \
+                --param llm-model="openai/qwen/qwen3-235b-a22b-07-25:free" \
+                --param llm-base-url="https://openrouter.ai/api/v1" \
+                --param max-iterations="10" \
+                --param event-type="issue" \
+                --param repo-full-name="${repo_full_name}" \
+                --param username="RHRolun" \
+                --param issue-number="1" \
+                --param namespace="openhands-pipeline" || echo "Failed to start pipeline for $repo"
+              
+            done < /mnt/config/repos
+        volumeMounts:
+          - name: repos-config
+            mountPath: /mnt/config
+      restartPolicy: Never
+      volumes:
+        - name: repos-config
+          configMap:
+            name: issue-resolver-repos
+  backoffLimit: 2
