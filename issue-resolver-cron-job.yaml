@@ -43,7 +43,6 @@ spec:
                 --param event-type="issue" \
                 --param repo-full-name="${repo_full_name}" \
                 --param username="RHRolun" \
-                --param issue-number="1" \
                 --param namespace="openhands-pipeline" || echo "Failed to start pipeline for $repo"
               
             done < /mnt/config/repos
