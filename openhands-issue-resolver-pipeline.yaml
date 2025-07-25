@@ -161,7 +161,7 @@ spec:
         # Check for open issues in the repository
         echo "🔍 Checking for open issues in $(params.repo-full-name)..."
         ISSUES=$(curl -s -H "Authorization: token $PAT_TOKEN" \
-          "https://api.github.com/repos/$(params.repo-full-name)/issues?state=open&per_page=100" | \
+          "https://api.github.com/repos/$(params.repo-full-name)/issues?state=open&labels=fix-me&per_page=100" | \
           /tmp/jq -r '.[] | select(.pull_request == null) | .number' | head -10)
 
         if [ -z "$ISSUES" ]; then
