@@ -15,10 +15,6 @@ spec:
       type: string
       description: LLM model to use
       default: "openai/qwen/qwen3-235b-a22b-07-25:free"
-    - name: llm-base-url
-      type: string
-      description: Base URL for the LLM API
-      default: "https://openrouter.ai/api/v1"
     - name: max-iterations
       type: string
       description: Maximum iterations for OpenHands
@@ -74,8 +70,6 @@ spec:
           value: $(params.llm-model)
         - name: max-iterations
           value: $(params.max-iterations)
-        - name: llm-base-url
-          value: $(params.llm-base-url)
         - name: event-type
           value: $(params.event-type)
         - name: repo-full-name
@@ -104,10 +98,6 @@ spec:
     - name: max-iterations
       type: string
       description: Maximum iterations
-    - name: llm-base-url
-      type: string
-      description: Base URL for the LLM API
-      default: "https://api.openai.com/v1"
     - name: event-type
       type: string
       description: GitHub event type
@@ -143,7 +133,6 @@ spec:
         curl -sLo /tmp/jq https://github.com/stedolan/jq/releases/download/jq-1.8.1/jq-linux64 && \
         chmod +x /tmp/jq
 
-        export LLM_BASE_URL=$(params.llm-base-url)
         export LLM_MODEL=$(params.llm-model)
         export KUBERNETES_NAMESPACE=$(params.namespace)
         
